@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Ultrasonic Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f6f9; text-align: center; margin: 0; padding: 20px; }
+        .card { background: white; max-width: 400px; margin: 30px auto; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { color: #333; }
+        .metric { font-size: 48px; font-weight: bold; color: #007bff; margin: 15px 0; }
+        .status { font-size: 20px; color: #28a745; font-weight: bold; margin-bottom: 20px; }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Monitoring ESP32</h2>
+        <p>Sensor Jarak HC-SR04 & LED</p>
+        
+        <div class="metric" id="jarakVal">-- cm</div>
+        <div class="status" id="statusVal">Menunggu Koneksi...</div>
+        
+        <button id="connectBtn" onclick="toggleSerial()">Hubungkan ESP32</button>
+    </div>
+
+    <script>
+        let port, reader, keepReading = false;
+
+        async function toggleSerial() {
+            if (keepReading) {
+                keepReading = false;
+                if (reader) await reader.cancel();
+                if (port) await port.close();
+                document.getElementById("connectBtn").innerText = "Hubungkan ESP32";
+                document.getElementById("statusVal").innerText = "Terputus";
+                return;
+            }
+
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                
+                document.getElementById("connectBtn").innerText = "Putuskan Koneksi";
+                document.getElementById("statusVal").innerText = "Terhubung!";
+                keepReading = true;
+
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                reader = textDecoder.readable.getReader();
+
+                let buffer = "";
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    let lines = buffer.split("\n");
+                    buffer = lines.pop(); // Sisa potongan teks
+
+                    for (let line of lines) {
+                        parseData(line.trim());
+                    }
+                }
+            } catch (error) {
+                console.error("Gagal terhubung:", error);
+                alert("Gagal terhubung ke perangkat serial.");
+            }
+        }
+
+        function parseData(data) {
+            // Contoh format data dari ESP32: JARAK:25.5,STATUS:SEMUA MATI
+            if (data.startsWith("JARAK:")) {
+                let parts = data.split(",");
+                let jarakStr = parts[0].replace("JARAK:", "");
+                let statusStr = parts[1] ? parts[1].replace("STATUS:", "") : "";
+
+                document.getElementById("jarakVal").innerText = jarakStr + " cm";
+                document.getElementById("statusVal").innerText = statusStr;
+            }
+        }
+    </script>
+</body>
+</html>
