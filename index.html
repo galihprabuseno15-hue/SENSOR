@@ -3,83 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Ultrasonic Dashboard</title>
+    <title>IoT Monitoring Jarak Jauh ESP32</title>
+    <!-- Memuat library MQTT via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f9; text-align: center; margin: 0; padding: 20px; }
-        .card { background: white; max-width: 400px; margin: 30px auto; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        body { font-family: Arial, sans-serif; background: #eef2f7; text-align: center; margin: 0; padding: 30px; }
+        .card { background: white; max-width: 400px; margin: auto; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         h2 { color: #333; }
-        .metric { font-size: 48px; font-weight: bold; color: #007bff; margin: 15px 0; }
-        .status { font-size: 20px; color: #28a745; font-weight: bold; margin-bottom: 20px; }
-        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
-        button:hover { background: #0056b3; }
+        .metric { font-size: 52px; font-weight: bold; color: #007bff; margin: 20px 0; }
+        .status { font-size: 22px; color: #28a745; font-weight: bold; margin-bottom: 15px; }
+        .conn { font-size: 14px; color: #6c757d; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2>Monitoring ESP32</h2>
-        <p>Sensor Jarak HC-SR04 & LED</p>
+        <h2>Dashboard Jarak Jauh</h2>
+        <p>Monitoring ESP32 via Internet</p>
         
         <div class="metric" id="jarakVal">-- cm</div>
-        <div class="status" id="statusVal">Menunggu Koneksi...</div>
-        
-        <button id="connectBtn" onclick="toggleSerial()">Hubungkan ESP32</button>
+        <div class="status" id="statusVal">Menghubungkan ke Server...</div>
+        <div class="conn" id="connStatus">Status: Menunggu...</div>
     </div>
 
     <script>
-        let port, reader, keepReading = false;
+        // Menggunakan broker publik gratis yang sama
+        const brokerUrl = "wss://broker.hivemq.com:8884/mqtt";
+        const topic = "esp32/sensor/jarak";
 
-        async function toggleSerial() {
-            if (keepReading) {
-                keepReading = false;
-                if (reader) await reader.cancel();
-                if (port) await port.close();
-                document.getElementById("connectBtn").innerText = "Hubungkan ESP32";
-                document.getElementById("statusVal").innerText = "Terputus";
-                return;
-            }
+        const client = mqtt.connect(brokerUrl);
 
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
-                
-                document.getElementById("connectBtn").innerText = "Putuskan Koneksi";
-                document.getElementById("statusVal").innerText = "Terhubung!";
-                keepReading = true;
+        client.on("connect", () => {
+            document.getElementById("connStatus").innerText = "Status: Terhubung ke Broker Internet";
+            document.getElementById("statusVal").innerText = "Menunggu Data...";
+            client.subscribe(topic);
+        });
 
-                const textDecoder = new TextDecoderStream();
-                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-                reader = textDecoder.readable.getReader();
-
-                let buffer = "";
-                while (keepReading) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    buffer += value;
-                    let lines = buffer.split("\n");
-                    buffer = lines.pop(); // Sisa potongan teks
-
-                    for (let line of lines) {
-                        parseData(line.trim());
-                    }
+        client.on("message", (tp, payload) => {
+            if (tp === topic) {
+                try {
+                    let data = JSON.parse(payload.toString());
+                    document.getElementById("jarakVal").innerText = data.jarak + " cm";
+                    document.getElementById("statusVal").innerText = data.status;
+                } catch(e) {
+                    console.log("Format data salah");
                 }
-            } catch (error) {
-                console.error("Gagal terhubung:", error);
-                alert("Gagal terhubung ke perangkat serial.");
             }
-        }
+        });
 
-        function parseData(data) {
-            // Contoh format data dari ESP32: JARAK:25.5,STATUS:SEMUA MATI
-            if (data.startsWith("JARAK:")) {
-                let parts = data.split(",");
-                let jarakStr = parts[0].replace("JARAK:", "");
-                let statusStr = parts[1] ? parts[1].replace("STATUS:", "") : "";
-
-                document.getElementById("jarakVal").innerText = jarakStr + " cm";
-                document.getElementById("statusVal").innerText = statusStr;
-            }
-        }
+        client.on("error", (err) => {
+            document.getElementById("connStatus").innerText = "Status: Koneksi Gagal";
+            console.error(err);
+        });
     </script>
 </body>
 </html>
